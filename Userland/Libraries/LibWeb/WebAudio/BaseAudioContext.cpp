@@ -8,7 +8,10 @@
 #include <LibWeb/Bindings/BaseAudioContextPrototype.h>
 #include <LibWeb/Bindings/Intrinsics.h>
 #include <LibWeb/HTML/EventNames.h>
+#include <LibWeb/WebAudio/AudioBuffer.h>
 #include <LibWeb/WebAudio/BaseAudioContext.h>
+#include <LibWeb/WebAudio/DynamicsCompressorNode.h>
+#include <LibWeb/WebAudio/GainNode.h>
 #include <LibWeb/WebAudio/OscillatorNode.h>
 
 namespace Web::WebAudio {
@@ -37,11 +40,33 @@ WebIDL::CallbackType* BaseAudioContext::onstatechange()
     return event_handler_attribute(HTML::EventNames::statechange);
 }
 
+// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer
+WebIDL::ExceptionOr<JS::NonnullGCPtr<AudioBuffer>> BaseAudioContext::create_buffer(WebIDL::UnsignedLong number_of_channels, WebIDL::UnsignedLong length, float sample_rate)
+{
+    // Creates an AudioBuffer of the given size. The audio data in the buffer will be zero-initialized (silent).
+    // A NotSupportedError exception MUST be thrown if any of the arguments is negative, zero, or outside its nominal range.
+    return AudioBuffer::create(realm(), number_of_channels, length, sample_rate);
+}
+
 // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createoscillator
 WebIDL::ExceptionOr<JS::NonnullGCPtr<OscillatorNode>> BaseAudioContext::create_oscillator()
 {
     // Factory method for an OscillatorNode.
     return OscillatorNode::create(realm(), *this);
+}
+
+// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createdynamicscompressor
+WebIDL::ExceptionOr<JS::NonnullGCPtr<DynamicsCompressorNode>> BaseAudioContext::create_dynamics_compressor()
+{
+    // Factory method for a DynamicsCompressorNode.
+    return DynamicsCompressorNode::create(realm(), *this);
+}
+
+// https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-creategain
+JS::NonnullGCPtr<GainNode> BaseAudioContext::create_gain()
+{
+    // Factory method for GainNode.
+    return GainNode::create(realm(), *this);
 }
 
 // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-createbuffer

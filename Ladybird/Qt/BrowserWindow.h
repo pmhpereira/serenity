@@ -8,6 +8,7 @@
 #pragma once
 
 #include "Tab.h"
+#include <Ladybird/Qt/FindInPageWidget.h>
 #include <Ladybird/Types.h>
 #include <LibCore/Forward.h>
 #include <LibWeb/HTML/ActivateTab.h>
@@ -30,7 +31,7 @@ class BrowserWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    BrowserWindow(Vector<URL::URL> const& initial_urls, WebView::CookieJar&, WebContentOptions const&, StringView webdriver_content_ipc_path);
+    BrowserWindow(Vector<URL::URL> const& initial_urls, WebView::CookieJar&, WebContentOptions const&, StringView webdriver_content_ipc_path, Tab* parent_tab = nullptr, Optional<u64> page_index = {});
 
     WebContentView& view() const { return m_current_tab->view(); }
 
@@ -78,6 +79,11 @@ public:
         return *m_select_all_action;
     }
 
+    QAction& find_action()
+    {
+        return *m_find_in_page_action;
+    }
+
     QAction& paste_action()
     {
         return *m_paste_action;
@@ -93,6 +99,8 @@ public:
         return *m_inspect_dom_node_action;
     }
 
+    Tab* current_tab() const { return m_current_tab; }
+
 public slots:
     void device_pixel_ratio_changed(qreal dpi);
     void tab_title_changed(int index, QString const&);
@@ -101,7 +109,7 @@ public slots:
     void tab_navigation_buttons_state_changed(int index);
     Tab& new_tab_from_url(URL::URL const&, Web::HTML::ActivateTab);
     Tab& new_tab_from_content(StringView html, Web::HTML::ActivateTab);
-    Tab& new_child_tab(Web::HTML::ActivateTab, Tab& parent, Web::HTML::WebViewHints, Optional<u64> page_index);
+    Tab& new_child_tab(Web::HTML::ActivateTab, Tab& parent, Optional<u64> page_index);
     void activate_tab(int index);
     void close_tab(int index);
     void move_tab(int old_index, int new_index);
@@ -117,6 +125,7 @@ public slots:
     void reset_zoom();
     void update_zoom_menu();
     void select_all();
+    void show_find_in_page();
     void paste();
     void copy_selected_text();
 
@@ -130,7 +139,7 @@ private:
     virtual void wheelEvent(QWheelEvent*) override;
     virtual void closeEvent(QCloseEvent*) override;
 
-    Tab& create_new_tab(Web::HTML::ActivateTab, Tab& parent, Web::HTML::WebViewHints, Optional<u64> page_index);
+    Tab& create_new_tab(Web::HTML::ActivateTab, Tab& parent, Optional<u64> page_index);
     void initialize_tab(Tab*);
 
     void debug_request(ByteString const& request, ByteString const& argument = "");
@@ -153,6 +162,8 @@ private:
     QString tool_tip_for_page_mute_state(Tab&) const;
     QTabBar::ButtonPosition audio_button_position_for_tab(int tab_index) const;
 
+    void set_window_rect(Optional<Web::DevicePixels> x, Optional<Web::DevicePixels> y, Optional<Web::DevicePixels> width, Optional<Web::DevicePixels> height);
+
     QScreen* m_current_screen;
     double m_device_pixel_ratio { 0 };
 
@@ -170,6 +181,7 @@ private:
     QAction* m_copy_selection_action { nullptr };
     QAction* m_paste_action { nullptr };
     QAction* m_select_all_action { nullptr };
+    QAction* m_find_in_page_action { nullptr };
     QAction* m_view_source_action { nullptr };
     QAction* m_inspect_dom_node_action { nullptr };
 

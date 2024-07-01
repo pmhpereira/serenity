@@ -168,7 +168,7 @@ public:
 
     // 14.7.5 The for-in, for-of, and for-await-of Statements
 
-    Optional<Completion> enumerate_object_properties(NOESCAPE Function<Optional<Completion>(Value)>) const;
+    Optional<Completion> enumerate_object_properties(Function<Optional<Completion>(Value)>) const;
 
     // Implementation-specific storage abstractions
 
@@ -187,8 +187,8 @@ public:
     using IntrinsicAccessor = Value (*)(Realm&);
     void define_intrinsic_accessor(PropertyKey const&, PropertyAttributes attributes, IntrinsicAccessor accessor);
 
-    void define_native_function(Realm&, PropertyKey const&, Function<ThrowCompletionOr<Value>(VM&)>, i32 length, PropertyAttributes attributes, Optional<Bytecode::Builtin> builtin = {});
-    void define_native_accessor(Realm&, PropertyKey const&, Function<ThrowCompletionOr<Value>(VM&)> getter, Function<ThrowCompletionOr<Value>(VM&)> setter, PropertyAttributes attributes);
+    void define_native_function(Realm&, PropertyKey const&, ESCAPING Function<ThrowCompletionOr<Value>(VM&)>, i32 length, PropertyAttributes attributes, Optional<Bytecode::Builtin> builtin = {});
+    void define_native_accessor(Realm&, PropertyKey const&, ESCAPING Function<ThrowCompletionOr<Value>(VM&)> getter, ESCAPING Function<ThrowCompletionOr<Value>(VM&)> setter, PropertyAttributes attributes);
 
     virtual bool is_dom_node() const { return false; }
     virtual bool is_function() const { return false; }
