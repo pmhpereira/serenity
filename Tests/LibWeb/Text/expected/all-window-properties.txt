@@ -37,6 +37,8 @@ CSSGroupingRule
 CSSImportRule
 CSSKeyframeRule
 CSSKeyframesRule
+CSSLayerBlockRule
+CSSLayerStatementRule
 CSSMediaRule
 CSSNamespaceRule
 CSSRule
@@ -281,6 +283,7 @@ SVGForeignObjectElement
 SVGGeometryElement
 SVGGradientElement
 SVGGraphicsElement
+SVGImageElement
 SVGLength
 SVGLineElement
 SVGLinearGradientElement

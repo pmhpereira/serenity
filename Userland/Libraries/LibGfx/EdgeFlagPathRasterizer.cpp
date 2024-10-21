@@ -29,7 +29,7 @@ static Vector<Detail::Edge> prepare_edges(ReadonlySpan<FloatLine> lines, unsigne
     // The first visible y value.
     auto top_clip = top_clip_scanline * int(samples_per_pixel);
     // The last visible y value.
-    auto bottom_clip = (bottom_clip_scanline + 1) * int(samples_per_pixel) - 1;
+    auto bottom_clip = (bottom_clip_scanline + 1) * int(samples_per_pixel);
     min_edge_y = bottom_clip;
     max_edge_y = top_clip;
 
@@ -75,9 +75,8 @@ static Vector<Detail::Edge> prepare_edges(ReadonlySpan<FloatLine> lines, unsigne
             start_x += dxdy * (top_clip - min_y);
             min_y = top_clip;
         }
-        if (max_y > bottom_clip) {
+        if (max_y > bottom_clip)
             max_y = bottom_clip;
-        }
 
         min_edge_y = min(min_y, min_edge_y);
         max_edge_y = max(max_y, max_edge_y);
@@ -312,7 +311,7 @@ auto EdgeFlagPathRasterizer<SamplesPerPixel>::accumulate_even_odd_scanline(EdgeE
     SampleType sample = init;
     VERIFY(edge_extent.min_x >= 0);
     VERIFY(edge_extent.max_x < static_cast<int>(m_scanline.size()));
-    for (int x = edge_extent.min_x; x <= edge_extent.max_x; x += 1) {
+    for (int x = edge_extent.min_x; x <= edge_extent.max_x; x++) {
         sample ^= m_scanline.data()[x];
         sample_callback(x, sample);
         m_scanline.data()[x] = 0;
@@ -326,7 +325,7 @@ auto EdgeFlagPathRasterizer<SamplesPerPixel>::accumulate_non_zero_scanline(EdgeE
     NonZeroAcc acc = init;
     VERIFY(edge_extent.min_x >= 0);
     VERIFY(edge_extent.max_x < static_cast<int>(m_scanline.size()));
-    for (int x = edge_extent.min_x; x <= edge_extent.max_x; x += 1) {
+    for (int x = edge_extent.min_x; x <= edge_extent.max_x; x++) {
         if (auto edges = m_scanline.data()[x]) {
             // We only need to process the windings when we hit some edges.
             for (auto y_sub = 0u; y_sub < SamplesPerPixel; y_sub++) {
@@ -413,22 +412,22 @@ FLATTEN __attribute__((hot)) void EdgeFlagPathRasterizer<SamplesPerPixel>::write
     auto write_scanline_with_fast_fills = [&](Color color) {
         if (color.alpha() != 255)
             return write_scanline_pixelwise(color);
-        constexpr SampleType full_converage = NumericLimits<SampleType>::max();
-        int full_converage_count = 0;
+        constexpr SampleType full_coverage = NumericLimits<SampleType>::max();
+        int full_coverage_count = 0;
         accumulate_scanline<WindingRule>(clipped_extent, acc, [&](int x, SampleType sample) {
-            if (sample == full_converage) {
-                full_converage_count++;
+            if (sample == full_coverage) {
+                full_coverage_count++;
                 return;
             } else {
                 write_pixel(dest_format, dest_ptr, scanline, x, sample, color);
             }
-            if (full_converage_count > 0) {
-                fast_fill_solid_color_span(dest_ptr, x - full_converage_count, x - 1, color);
-                full_converage_count = 0;
+            if (full_coverage_count > 0) {
+                fast_fill_solid_color_span(dest_ptr, x - full_coverage_count, x - 1, color);
+                full_coverage_count = 0;
             }
         });
-        if (full_converage_count > 0)
-            fast_fill_solid_color_span(dest_ptr, clipped_extent.max_x - full_converage_count + 1, clipped_extent.max_x, color);
+        if (full_coverage_count > 0)
+            fast_fill_solid_color_span(dest_ptr, clipped_extent.max_x - full_coverage_count + 1, clipped_extent.max_x, color);
     };
     switch_on_color_or_function(
         color_or_function, write_scanline_with_fast_fills, write_scanline_pixelwise);

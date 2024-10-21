@@ -50,12 +50,6 @@ public:
     explicit Painter(Gfx::Bitmap&);
     ~Painter() = default;
 
-    // FIXME: Remove this after replacing all uses with Gfx::LineStyle.
-    using LineStyle = ::Gfx::LineStyle;
-
-    // FIXME: Remove this after replacing all uses with Gfx::ScalingMode.
-    using ScalingMode = ::Gfx::ScalingMode;
-
     void clear_rect(IntRect const&, Color);
     void fill_rect(IntRect const&, Color);
     void fill_rect(IntRect const&, PaintStyle const&);
@@ -145,9 +139,6 @@ public:
     static void for_each_line_segment_on_elliptical_arc(FloatPoint p1, FloatPoint p2, FloatPoint center, FloatSize radii, float x_axis_rotation, float theta_1, float theta_delta, Function<void(FloatPoint, FloatPoint)>&&);
 
     void stroke_path(Path const&, Color, int thickness);
-
-    // FIXME: Remove this after replacing all uses with Gfx::WindingRule.
-    using WindingRule = ::Gfx::WindingRule;
 
     void fill_path(Path const&, Color, WindingRule rule = WindingRule::Nonzero);
     void fill_path(Path const&, PaintStyle const& paint_style, float opacity = 1.0f, WindingRule rule = WindingRule::Nonzero);

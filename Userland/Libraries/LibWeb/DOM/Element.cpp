@@ -448,9 +448,11 @@ void Element::run_attribute_change_steps(FlyString const& local_name, Optional<S
 
     // AD-HOC: Run our own internal attribute change handler.
     attribute_changed(local_name, old_value, value);
-    invalidate_style_after_attribute_change(local_name);
 
-    document().bump_dom_tree_version();
+    if (old_value != value) {
+        invalidate_style_after_attribute_change(local_name);
+        document().bump_dom_tree_version();
+    }
 }
 
 void Element::attribute_changed(FlyString const& name, Optional<String> const&, Optional<String> const& value)
@@ -875,7 +877,7 @@ void Element::set_shadow_root(JS::GCPtr<ShadowRoot> shadow_root)
     m_shadow_root = move(shadow_root);
     if (m_shadow_root)
         m_shadow_root->set_host(this);
-    invalidate_style();
+    invalidate_style(StyleInvalidationReason::ElementSetShadowRoot);
 }
 
 CSS::CSSStyleDeclaration* Element::style_for_bindings()
@@ -1926,7 +1928,7 @@ void Element::invalidate_style_after_attribute_change(FlyString const& attribute
     (void)attribute_name;
 
     // FIXME: This will need to become smarter when we implement the :has() selector.
-    invalidate_style();
+    invalidate_style(StyleInvalidationReason::ElementAttributeChange);
 }
 
 // https://www.w3.org/TR/wai-aria-1.2/#tree_exclusion

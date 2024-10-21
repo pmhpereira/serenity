@@ -46,6 +46,11 @@ CSSStyleDeclaration* CSSStyleRule::style()
     return m_declaration;
 }
 
+FlyString CSSStyleRule::qualified_layer_name() const
+{
+    return parent_layer_internal_qualified_name();
+}
+
 // https://www.w3.org/TR/cssom/#serialize-a-css-rule
 String CSSStyleRule::serialized() const
 {
@@ -109,7 +114,7 @@ void CSSStyleRule::set_selector_text(StringView selector_text)
         if (auto* sheet = parent_style_sheet()) {
             if (auto style_sheet_list = sheet->style_sheet_list()) {
                 style_sheet_list->document().style_computer().invalidate_rule_cache();
-                style_sheet_list->document_or_shadow_root().invalidate_style();
+                style_sheet_list->document_or_shadow_root().invalidate_style(DOM::StyleInvalidationReason::SetSelectorText);
             }
         }
     }

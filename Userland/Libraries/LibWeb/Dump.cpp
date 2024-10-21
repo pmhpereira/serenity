@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018-2023, Andreas Kling <kling@serenityos.org>
  * Copyright (c) 2021, the SerenityOS developers.
+ * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  *
  * SPDX-License-Identifier: BSD-2-Clause
  */
@@ -10,6 +11,8 @@
 #include <AK/Utf8View.h>
 #include <LibWeb/CSS/CSSFontFaceRule.h>
 #include <LibWeb/CSS/CSSImportRule.h>
+#include <LibWeb/CSS/CSSLayerBlockRule.h>
+#include <LibWeb/CSS/CSSLayerStatementRule.h>
 #include <LibWeb/CSS/CSSMediaRule.h>
 #include <LibWeb/CSS/CSSRule.h>
 #include <LibWeb/CSS/CSSStyleRule.h>
@@ -617,20 +620,27 @@ ErrorOr<void> dump_rule(StringBuilder& builder, CSS::CSSRule const& rule, int in
     case CSS::CSSRule::Type::Import:
         dump_import_rule(builder, verify_cast<CSS::CSSImportRule const>(rule), indent_levels);
         break;
+    case CSS::CSSRule::Type::Keyframe:
+    case CSS::CSSRule::Type::Keyframes:
+        // TODO: Dump them!
+        break;
+    case CSS::CSSRule::Type::LayerBlock:
+        dump_layer_block_rule(builder, verify_cast<CSS::CSSLayerBlockRule const>(rule), indent_levels);
+        break;
+    case CSS::CSSRule::Type::LayerStatement:
+        dump_layer_statement_rule(builder, verify_cast<CSS::CSSLayerStatementRule const>(rule), indent_levels);
+        break;
     case CSS::CSSRule::Type::Media:
         TRY(dump_media_rule(builder, verify_cast<CSS::CSSMediaRule const>(rule), indent_levels));
+        break;
+    case CSS::CSSRule::Type::Namespace:
+        TRY(dump_namespace_rule(builder, verify_cast<CSS::CSSNamespaceRule const>(rule), indent_levels));
         break;
     case CSS::CSSRule::Type::Style:
         TRY(dump_style_rule(builder, verify_cast<CSS::CSSStyleRule const>(rule), indent_levels));
         break;
     case CSS::CSSRule::Type::Supports:
         TRY(dump_supports_rule(builder, verify_cast<CSS::CSSSupportsRule const>(rule), indent_levels));
-        break;
-    case CSS::CSSRule::Type::Keyframe:
-    case CSS::CSSRule::Type::Keyframes:
-        break;
-    case CSS::CSSRule::Type::Namespace:
-        TRY(dump_namespace_rule(builder, verify_cast<CSS::CSSNamespaceRule const>(rule), indent_levels));
         break;
     }
     return {};
@@ -652,6 +662,11 @@ void dump_font_face_rule(StringBuilder& builder, CSS::CSSFontFaceRule const& rul
         builder.appendff("slope: {}\n", font_face.slope().value());
     }
 
+    if (font_face.width().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("width: {}\n", font_face.width().value());
+    }
+
     indent(builder, indent_levels + 1);
     builder.append("sources:\n"sv);
     for (auto const& source : font_face.sources()) {
@@ -668,12 +683,53 @@ void dump_font_face_rule(StringBuilder& builder, CSS::CSSFontFaceRule const& rul
         indent(builder, indent_levels + 2);
         builder.appendff("{}\n", unicode_range.to_string());
     }
+
+    if (font_face.ascent_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("ascent-override: {}\n", font_face.ascent_override().value());
+    }
+    if (font_face.descent_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("descent-override: {}\n", font_face.descent_override().value());
+    }
+    if (font_face.line_gap_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("line-gap-override: {}\n", font_face.line_gap_override().value());
+    }
+
+    indent(builder, indent_levels + 1);
+    builder.appendff("display: {}\n", CSS::to_string(font_face.font_display()));
+
+    if (font_face.font_named_instance().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("named-instance: {}\n", font_face.font_named_instance().value());
+    }
+
+    if (font_face.font_language_override().has_value()) {
+        indent(builder, indent_levels + 1);
+        builder.appendff("language-override: {}\n", font_face.font_language_override().value());
+    }
 }
 
 void dump_import_rule(StringBuilder& builder, CSS::CSSImportRule const& rule, int indent_levels)
 {
     indent(builder, indent_levels);
     builder.appendff("  Document URL: {}\n", rule.url());
+}
+
+void dump_layer_block_rule(StringBuilder& builder, CSS::CSSLayerBlockRule const& layer_block, int indent_levels)
+{
+    indent(builder, indent_levels);
+    builder.appendff("  Layer Block: `{}`\n  Rules ({}):\n", layer_block.internal_name(), layer_block.css_rules().length());
+    for (auto& rule : layer_block.css_rules())
+        MUST(dump_rule(builder, rule, indent_levels + 1));
+}
+
+void dump_layer_statement_rule(StringBuilder& builder, CSS::CSSLayerStatementRule const& layer_statement, int indent_levels)
+{
+    indent(builder, indent_levels);
+    builder.append("  Layer Statement: "sv);
+    builder.join(", "sv, layer_statement.name_list());
 }
 
 ErrorOr<void> dump_media_rule(StringBuilder& builder, CSS::CSSMediaRule const& media, int indent_levels)

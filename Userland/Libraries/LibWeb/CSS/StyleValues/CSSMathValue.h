@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2018-2020, Andreas Kling <kling@serenityos.org>
  * Copyright (c) 2021, Tobias Christiansen <tobyase@serenityos.org>
- * Copyright (c) 2021-2023, Sam Atkins <atkinssj@serenityos.org>
+ * Copyright (c) 2021-2024, Sam Atkins <sam@ladybird.org>
  * Copyright (c) 2022-2023, MacDue <macdue@dueutil.tech>
  *
  * SPDX-License-Identifier: BSD-2-Clause
@@ -24,7 +24,7 @@ namespace Web::CSS {
 
 class CalculationNode;
 
-class CalculatedStyleValue : public CSSStyleValue {
+class CSSMathValue : public CSSStyleValue {
 public:
     enum class ResolvedType {
         Angle,
@@ -65,6 +65,8 @@ public:
 
         Value const& value() const { return m_value; }
 
+        ResolvedType resolved_type() const;
+
         [[nodiscard]] bool operator==(CalculationResult const&) const = default;
 
     private:
@@ -72,9 +74,9 @@ public:
         Value m_value;
     };
 
-    static ValueComparingNonnullRefPtr<CalculatedStyleValue> create(NonnullOwnPtr<CalculationNode> calculation, CSSNumericType resolved_type)
+    static ValueComparingNonnullRefPtr<CSSMathValue> create(NonnullOwnPtr<CalculationNode> calculation, CSSNumericType resolved_type)
     {
-        return adopt_ref(*new (nothrow) CalculatedStyleValue(move(calculation), resolved_type));
+        return adopt_ref(*new (nothrow) CSSMathValue(move(calculation), resolved_type));
     }
 
     String to_string() const override;
@@ -124,8 +126,8 @@ public:
     String dump() const;
 
 private:
-    explicit CalculatedStyleValue(NonnullOwnPtr<CalculationNode> calculation, CSSNumericType resolved_type)
-        : CSSStyleValue(Type::Calculated)
+    explicit CSSMathValue(NonnullOwnPtr<CalculationNode> calculation, CSSNumericType resolved_type)
+        : CSSStyleValue(Type::Math)
         , m_resolved_type(resolved_type)
         , m_calculation(move(calculation))
     {
@@ -203,7 +205,7 @@ public:
         // This only exists during parsing.
         Unparsed,
     };
-    using NumericValue = CalculatedStyleValue::CalculationResult::Value;
+    using NumericValue = CSSMathValue::CalculationResult::Value;
 
     virtual ~CalculationNode();
 
@@ -252,10 +254,10 @@ public:
     }
 
     virtual String to_string() const = 0;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const = 0;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const = 0;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const = 0;
     virtual bool contains_percentage() const = 0;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const = 0;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const = 0;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) = 0;
 
     virtual void dump(StringBuilder&, int indent) const = 0;
@@ -274,10 +276,10 @@ public:
     ~NumericCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override { }
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -294,10 +296,10 @@ public:
     ~SumCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -314,10 +316,10 @@ public:
     ~ProductCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -334,10 +336,10 @@ public:
     ~NegateCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -354,10 +356,10 @@ public:
     ~InvertCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -374,10 +376,10 @@ public:
     ~MinCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -394,10 +396,10 @@ public:
     ~MaxCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -414,10 +416,10 @@ public:
     ~ClampCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -436,10 +438,10 @@ public:
     ~AbsCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -456,10 +458,10 @@ public:
     ~SignCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -476,10 +478,10 @@ public:
     ~ConstantCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override { return false; }
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&> context, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&> context, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override { }
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -496,10 +498,10 @@ public:
     ~SinCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -516,10 +518,10 @@ public:
     ~CosCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -536,10 +538,10 @@ public:
     ~TanCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -556,10 +558,10 @@ public:
     ~AsinCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -576,10 +578,10 @@ public:
     ~AcosCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -596,10 +598,10 @@ public:
     ~AtanCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -616,10 +618,10 @@ public:
     ~Atan2CalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -637,10 +639,10 @@ public:
     ~PowCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override { return false; }
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -658,10 +660,10 @@ public:
     ~SqrtCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override { return false; }
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -678,10 +680,10 @@ public:
     ~HypotCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -698,10 +700,10 @@ public:
     ~LogCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override { return false; }
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -719,10 +721,10 @@ public:
     ~ExpCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override { return false; }
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -739,10 +741,10 @@ public:
     ~RoundCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -761,10 +763,10 @@ public:
     ~ModCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;
@@ -782,10 +784,10 @@ public:
     ~RemCalculationNode();
 
     virtual String to_string() const override;
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override;
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override;
     virtual Optional<CSSNumericType> determine_type(PropertyID) const override;
     virtual bool contains_percentage() const override;
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override;
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override;
     virtual void for_each_child_node(Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override;
 
     virtual void dump(StringBuilder&, int indent) const override;

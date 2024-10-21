@@ -42,6 +42,8 @@ set(SOURCES
     CSS/CSSKeyframeRule.cpp
     CSS/CSSKeyframesRule.cpp
     CSS/CSSFontFaceRule.cpp
+    CSS/CSSLayerBlockRule.cpp
+    CSS/CSSLayerStatementRule.cpp
     CSS/CSSMediaRule.cpp
     CSS/CSSNumericType.cpp
     CSS/CSSNamespaceRule.cpp
@@ -106,7 +108,6 @@ set(SOURCES
     CSS/StyleValues/BackgroundSizeStyleValue.cpp
     CSS/StyleValues/BasicShapeStyleValue.cpp
     CSS/StyleValues/BorderRadiusStyleValue.cpp
-    CSS/StyleValues/CalculatedStyleValue.cpp
     CSS/StyleValues/ConicGradientStyleValue.cpp
     CSS/StyleValues/ContentStyleValue.cpp
     CSS/StyleValues/CounterDefinitionsStyleValue.cpp
@@ -115,6 +116,7 @@ set(SOURCES
     CSS/StyleValues/CSSHSL.cpp
     CSS/StyleValues/CSSHWB.cpp
     CSS/StyleValues/CSSKeywordValue.cpp
+    CSS/StyleValues/CSSMathValue.cpp
     CSS/StyleValues/CSSOKLab.cpp
     CSS/StyleValues/CSSOKLCH.cpp
     CSS/StyleValues/CSSRGB.cpp
@@ -518,6 +520,7 @@ set(SOURCES
     Layout/SVGForeignObjectBox.cpp
     Layout/SVGGeometryBox.cpp
     Layout/SVGGraphicsBox.cpp
+    Layout/SVGImageBox.cpp
     Layout/SVGSVGBox.cpp
     Layout/SVGMaskBox.cpp
     Layout/SVGClipBox.cpp
@@ -649,6 +652,7 @@ set(SOURCES
     SVG/SVGGeometryElement.cpp
     SVG/SVGGraphicsElement.cpp
     SVG/SVGGradientElement.cpp
+    SVG/SVGImageElement.cpp
     SVG/SVGPathElement.cpp
     SVG/SVGCircleElement.cpp
     SVG/SVGEllipseElement.cpp

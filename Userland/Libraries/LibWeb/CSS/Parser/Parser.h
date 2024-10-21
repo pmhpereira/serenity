@@ -30,7 +30,7 @@
 #include <LibWeb/CSS/Ratio.h>
 #include <LibWeb/CSS/Selector.h>
 #include <LibWeb/CSS/StyleValues/AbstractImageStyleValue.h>
-#include <LibWeb/CSS/StyleValues/CalculatedStyleValue.h>
+#include <LibWeb/CSS/StyleValues/CSSMathValue.h>
 #include <LibWeb/CSS/Supports.h>
 #include <LibWeb/Forward.h>
 
@@ -220,10 +220,17 @@ private:
     template<typename T>
     Vector<ParsedFontFace::Source> parse_font_face_src(TokenStream<T>&);
 
+    enum class AllowBlankLayerName {
+        No,
+        Yes,
+    };
+    Optional<FlyString> parse_layer_name(TokenStream<ComponentValue>&, AllowBlankLayerName);
+
     JS::GCPtr<CSSRule> convert_to_rule(NonnullRefPtr<Rule>);
-    JS::GCPtr<CSSMediaRule> convert_to_media_rule(Rule&);
     JS::GCPtr<CSSKeyframesRule> convert_to_keyframes_rule(Rule&);
     JS::GCPtr<CSSImportRule> convert_to_import_rule(Rule&);
+    JS::GCPtr<CSSRule> convert_to_layer_rule(Rule&);
+    JS::GCPtr<CSSMediaRule> convert_to_media_rule(Rule&);
     JS::GCPtr<CSSNamespaceRule> convert_to_namespace_rule(Rule&);
     JS::GCPtr<CSSSupportsRule> convert_to_supports_rule(Rule&);
 
@@ -277,7 +284,7 @@ private:
     };
     Optional<PropertyAndValue> parse_css_value_for_properties(ReadonlySpan<PropertyID>, TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_builtin_value(TokenStream<ComponentValue>&);
-    RefPtr<CalculatedStyleValue> parse_calculated_value(ComponentValue const&);
+    RefPtr<CSSMathValue> parse_calculated_value(ComponentValue const&);
     RefPtr<CustomIdentStyleValue> parse_custom_ident_value(TokenStream<ComponentValue>&, std::initializer_list<StringView> blacklist);
     // NOTE: Implemented in generated code. (GenerateCSSMathFunctions.cpp)
     OwnPtr<CalculationNode> parse_math_function(PropertyID, Function const&);
@@ -348,6 +355,7 @@ private:
     RefPtr<CSSStyleValue> parse_flex_flow_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_font_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_font_family_value(TokenStream<ComponentValue>&);
+    RefPtr<CSSStyleValue> parse_font_language_override_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_list_style_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_math_depth_value(TokenStream<ComponentValue>&);
     RefPtr<CSSStyleValue> parse_overflow_value(TokenStream<ComponentValue>&);

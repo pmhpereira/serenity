@@ -461,8 +461,9 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
 
     if (auto maybe_font_variant = computed_style.font_variant(); maybe_font_variant.has_value())
         computed_values.set_font_variant(maybe_font_variant.release_value());
+    if (auto maybe_font_language_override = computed_style.font_language_override(); maybe_font_language_override.has_value())
+        computed_values.set_font_language_override(maybe_font_language_override.release_value());
 
-    // FIXME: BorderXRadius properties are now BorderRadiusStyleValues, so make use of that.
     auto border_bottom_left_radius = computed_style.property(CSS::PropertyID::BorderBottomLeftRadius);
     if (border_bottom_left_radius->is_border_radius()) {
         computed_values.set_border_bottom_left_radius(
@@ -694,8 +695,8 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
     if (transition_delay_property->is_time()) {
         auto& transition_delay = transition_delay_property->as_time();
         computed_values.set_transition_delay(transition_delay.time());
-    } else if (transition_delay_property->is_calculated()) {
-        auto& transition_delay = transition_delay_property->as_calculated();
+    } else if (transition_delay_property->is_math()) {
+        auto& transition_delay = transition_delay_property->as_math();
         computed_values.set_transition_delay(transition_delay.resolve_time().value());
     }
 
@@ -716,8 +717,8 @@ void NodeWithStyle::apply_style(const CSS::StyleProperties& computed_style)
         } else {
             auto resolve_border_width = [&]() -> CSSPixels {
                 auto value = computed_style.property(width_property);
-                if (value->is_calculated())
-                    return max(CSSPixels { 0 }, value->as_calculated().resolve_length(*this)->to_px(*this));
+                if (value->is_math())
+                    return max(CSSPixels { 0 }, value->as_math().resolve_length(*this)->to_px(*this));
                 if (value->is_length())
                     return value->as_length().length().to_px(*this);
                 if (value->is_keyword()) {

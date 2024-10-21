@@ -20,6 +20,8 @@
 #include <LibWeb/CSS/CSSImportRule.h>
 #include <LibWeb/CSS/CSSKeyframeRule.h>
 #include <LibWeb/CSS/CSSKeyframesRule.h>
+#include <LibWeb/CSS/CSSLayerBlockRule.h>
+#include <LibWeb/CSS/CSSLayerStatementRule.h>
 #include <LibWeb/CSS/CSSMediaRule.h>
 #include <LibWeb/CSS/CSSNamespaceRule.h>
 #include <LibWeb/CSS/CSSStyleDeclaration.h>
@@ -1245,6 +1247,46 @@ RefPtr<CSSStyleValue> Parser::parse_basic_shape_value(TokenStream<ComponentValue
     return BasicShapeStyleValue::create(Polygon { FillRule::Nonzero, move(points) });
 }
 
+Optional<FlyString> Parser::parse_layer_name(TokenStream<ComponentValue>& tokens, AllowBlankLayerName allow_blank_layer_name)
+{
+    // https://drafts.csswg.org/css-cascade-5/#typedef-layer-name
+    // <layer-name> = <ident> [ '.' <ident> ]*
+
+    // "The CSS-wide keywords are reserved for future use, and cause the rule to be invalid at parse time if used as an <ident> in the <layer-name>."
+    auto is_valid_layer_name_part = [](auto& token) {
+        return token.is(Token::Type::Ident) && !is_css_wide_keyword(token.token().ident());
+    };
+
+    auto transaction = tokens.begin_transaction();
+    tokens.skip_whitespace();
+    if (!tokens.has_next_token() && allow_blank_layer_name == AllowBlankLayerName::Yes) {
+        // No name present, just return a blank one
+        return FlyString();
+    }
+
+    auto& first_name_token = tokens.next_token();
+    if (!is_valid_layer_name_part(first_name_token))
+        return {};
+
+    StringBuilder builder;
+    builder.append(first_name_token.token().ident());
+
+    while (tokens.has_next_token()) {
+        // Repeatedly parse `'.' <ident>`
+        if (!tokens.peek_token().is_delim('.'))
+            break;
+        (void)tokens.next_token(); // '.'
+
+        auto& name_token = tokens.next_token();
+        if (!is_valid_layer_name_part(name_token))
+            return {};
+        builder.appendff(".{}", name_token.token().ident());
+    }
+
+    transaction.commit();
+    return builder.to_fly_string_without_validation();
+}
+
 JS::GCPtr<CSSRule> Parser::convert_to_rule(NonnullRefPtr<Rule> rule)
 {
     if (rule->is_at_rule()) {
@@ -1264,6 +1306,9 @@ JS::GCPtr<CSSRule> Parser::convert_to_rule(NonnullRefPtr<Rule> rule)
 
         if (rule->at_rule_name().equals_ignoring_ascii_case("keyframes"sv))
             return convert_to_keyframes_rule(rule);
+
+        if (rule->at_rule_name().equals_ignoring_ascii_case("layer"sv))
+            return convert_to_layer_rule(rule);
 
         if (rule->at_rule_name().equals_ignoring_ascii_case("media"sv))
             return convert_to_media_rule(rule);
@@ -1355,6 +1400,75 @@ JS::GCPtr<CSSImportRule> Parser::convert_to_import_rule(Rule& rule)
     }
 
     return CSSImportRule::create(url.value(), const_cast<DOM::Document&>(*m_context.document()));
+}
+
+JS::GCPtr<CSSRule> Parser::convert_to_layer_rule(Rule& rule)
+{
+    // https://drafts.csswg.org/css-cascade-5/#at-layer
+    if (rule.block()) {
+        // CSSLayerBlockRule
+        // @layer <layer-name>? {
+        //   <rule-list>
+        // }
+
+        // First, the name
+        FlyString layer_name = {};
+        auto prelude_tokens = TokenStream { rule.prelude() };
+        if (auto maybe_name = parse_layer_name(prelude_tokens, AllowBlankLayerName::Yes); maybe_name.has_value()) {
+            layer_name = maybe_name.release_value();
+        } else {
+            dbgln_if(CSS_PARSER_DEBUG, "CSSParser: @layer has invalid prelude, (not a valid layer name) prelude = {}; discarding.", rule.prelude());
+            return {};
+        }
+
+        prelude_tokens.skip_whitespace();
+        if (prelude_tokens.has_next_token()) {
+            dbgln_if(CSS_PARSER_DEBUG, "CSSParser: @layer has invalid prelude, (tokens after layer name) prelude = {}; discarding.", rule.prelude());
+            return {};
+        }
+
+        // Then the rules
+        auto child_tokens = TokenStream { rule.block()->values() };
+        auto parser_rules = parse_a_list_of_rules(child_tokens);
+        JS::MarkedVector<CSSRule*> child_rules(m_context.realm().heap());
+        for (auto& raw_rule : parser_rules) {
+            if (auto child_rule = convert_to_rule(raw_rule))
+                child_rules.append(child_rule);
+        }
+        auto rule_list = CSSRuleList::create(m_context.realm(), child_rules);
+        return CSSLayerBlockRule::create(m_context.realm(), layer_name, rule_list);
+    }
+
+    // CSSLayerStatementRule
+    // @layer <layer-name>#;
+    auto tokens = TokenStream { rule.prelude() };
+    tokens.skip_whitespace();
+    Vector<FlyString> layer_names;
+    while (tokens.has_next_token()) {
+        // Comma
+        if (!layer_names.is_empty()) {
+            if (auto comma = tokens.next_token(); !comma.is(Token::Type::Comma)) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: @layer missing separating comma, ({}) prelude = {}; discarding.", comma.to_debug_string(), rule.prelude());
+                return {};
+            }
+            tokens.skip_whitespace();
+        }
+
+        if (auto name = parse_layer_name(tokens, AllowBlankLayerName::No); name.has_value()) {
+            layer_names.append(name.release_value());
+        } else {
+            dbgln_if(CSS_PARSER_DEBUG, "CSSParser: @layer contains invalid name, prelude = {}; discarding.", rule.prelude());
+            return {};
+        }
+        tokens.skip_whitespace();
+    }
+
+    if (layer_names.is_empty()) {
+        dbgln_if(CSS_PARSER_DEBUG, "CSSParser: @layer statement has no layer names, prelude = {}; discarding.", rule.prelude());
+        return {};
+    }
+
+    return CSSLayerStatementRule::create(m_context.realm(), move(layer_names));
 }
 
 JS::GCPtr<CSSKeyframesRule> Parser::convert_to_keyframes_rule(Rule& rule)
@@ -1678,7 +1792,7 @@ RefPtr<CustomIdentStyleValue> Parser::parse_custom_ident_value(TokenStream<Compo
     return CustomIdentStyleValue::create(custom_ident);
 }
 
-RefPtr<CalculatedStyleValue> Parser::parse_calculated_value(ComponentValue const& component_value)
+RefPtr<CSSMathValue> Parser::parse_calculated_value(ComponentValue const& component_value)
 {
     if (!component_value.is_function())
         return nullptr;
@@ -1693,7 +1807,7 @@ RefPtr<CalculatedStyleValue> Parser::parse_calculated_value(ComponentValue const
     if (!function_type.has_value())
         return nullptr;
 
-    return CalculatedStyleValue::create(function_node.release_nonnull(), function_type.release_value());
+    return CSSMathValue::create(function_node.release_nonnull(), function_type.release_value());
 }
 
 OwnPtr<CalculationNode> Parser::parse_a_calc_function_node(Function const& function)
@@ -2410,7 +2524,7 @@ RefPtr<CSSStyleValue> Parser::parse_angle_value(TokenStream<ComponentValue>& tok
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_angle()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_angle())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_angle())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2423,7 +2537,7 @@ RefPtr<CSSStyleValue> Parser::parse_angle_percentage_value(TokenStream<Component
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_angle() || dimension_value->is_percentage()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_angle_percentage())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_angle_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2436,7 +2550,7 @@ RefPtr<CSSStyleValue> Parser::parse_flex_value(TokenStream<ComponentValue>& toke
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_flex()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_flex())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_flex())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2449,7 +2563,7 @@ RefPtr<CSSStyleValue> Parser::parse_frequency_value(TokenStream<ComponentValue>&
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_frequency()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_frequency())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_frequency())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2462,7 +2576,7 @@ RefPtr<CSSStyleValue> Parser::parse_frequency_percentage_value(TokenStream<Compo
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_frequency() || dimension_value->is_percentage()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_frequency_percentage())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_frequency_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2475,7 +2589,7 @@ RefPtr<CSSStyleValue> Parser::parse_length_value(TokenStream<ComponentValue>& to
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_length()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_length())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_length())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2488,7 +2602,7 @@ RefPtr<CSSStyleValue> Parser::parse_length_percentage_value(TokenStream<Componen
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_length() || dimension_value->is_percentage()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_length_percentage())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_length_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2501,7 +2615,7 @@ RefPtr<CSSStyleValue> Parser::parse_resolution_value(TokenStream<ComponentValue>
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_resolution()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_resolution())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_resolution())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2514,7 +2628,7 @@ RefPtr<CSSStyleValue> Parser::parse_time_value(TokenStream<ComponentValue>& toke
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_time()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_time())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_time())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2527,7 +2641,7 @@ RefPtr<CSSStyleValue> Parser::parse_time_percentage_value(TokenStream<ComponentV
     auto transaction = tokens.begin_transaction();
     if (auto dimension_value = parse_dimension_value(tokens)) {
         if (dimension_value->is_time() || dimension_value->is_percentage()
-            || (dimension_value->is_calculated() && dimension_value->as_calculated().resolves_to_time_percentage())) {
+            || (dimension_value->is_math() && dimension_value->as_math().resolves_to_time_percentage())) {
             transaction.commit();
             return dimension_value;
         }
@@ -2736,7 +2850,7 @@ RefPtr<CSSStyleValue> Parser::parse_rgb_color_value(TokenStream<ComponentValue>&
         // Verify we're all percentages or all numbers
         auto is_percentage = [](CSSStyleValue const& style_value) {
             return style_value.is_percentage()
-                || (style_value.is_calculated() && style_value.as_calculated().resolves_to_percentage());
+                || (style_value.is_math() && style_value.as_math().resolves_to_percentage());
         };
         bool red_is_percentage = is_percentage(*red);
         bool green_is_percentage = is_percentage(*green);
@@ -4051,8 +4165,8 @@ static Optional<LengthPercentage> style_value_to_length_percentage(auto value)
         return LengthPercentage { value->as_percentage().percentage() };
     if (value->is_length())
         return LengthPercentage { value->as_length().length() };
-    if (value->is_calculated())
-        return LengthPercentage { value->as_calculated() };
+    if (value->is_math())
+        return LengthPercentage { value->as_math() };
     return {};
 }
 
@@ -4179,8 +4293,8 @@ RefPtr<CSSStyleValue> Parser::parse_single_background_size_value(TokenStream<Com
             return LengthPercentage { style_value.as_percentage().percentage() };
         if (style_value.is_length())
             return LengthPercentage { style_value.as_length().length() };
-        if (style_value.is_calculated())
-            return LengthPercentage { style_value.as_calculated() };
+        if (style_value.is_math())
+            return LengthPercentage { style_value.as_math() };
         return {};
     };
 
@@ -5142,7 +5256,7 @@ static bool is_generic_font_family(Keyword keyword)
 
 RefPtr<CSSStyleValue> Parser::parse_font_value(TokenStream<ComponentValue>& tokens)
 {
-    RefPtr<CSSStyleValue> font_stretch;
+    RefPtr<CSSStyleValue> font_width;
     RefPtr<CSSStyleValue> font_style;
     RefPtr<CSSStyleValue> font_weight;
     RefPtr<CSSStyleValue> font_size;
@@ -5156,7 +5270,9 @@ RefPtr<CSSStyleValue> Parser::parse_font_value(TokenStream<ComponentValue>& toke
     // So, we have to handle that separately.
     int normal_count = 0;
 
-    auto remaining_longhands = Vector { PropertyID::FontSize, PropertyID::FontStretch, PropertyID::FontStyle, PropertyID::FontVariant, PropertyID::FontWeight };
+    // FIXME: `font-variant` allows a lot of different values which aren't allowed in the `font` shorthand.
+    // FIXME: `font-width` allows <percentage> values, which aren't allowed in the `font` shorthand.
+    auto remaining_longhands = Vector { PropertyID::FontSize, PropertyID::FontStyle, PropertyID::FontVariant, PropertyID::FontWeight, PropertyID::FontWidth };
     auto transaction = tokens.begin_transaction();
 
     while (tokens.has_next_token()) {
@@ -5195,13 +5311,12 @@ RefPtr<CSSStyleValue> Parser::parse_font_value(TokenStream<ComponentValue>& toke
             font_families = maybe_font_families.release_nonnull();
             continue;
         }
-        case PropertyID::FontStretch: {
-            VERIFY(!font_stretch);
-            font_stretch = value.release_nonnull();
+        case PropertyID::FontWidth: {
+            VERIFY(!font_width);
+            font_width = value.release_nonnull();
             continue;
         }
         case PropertyID::FontStyle: {
-            // FIXME: Handle angle parameter to `oblique`: https://www.w3.org/TR/css-fonts-4/#font-style-prop
             VERIFY(!font_style);
             font_style = value.release_nonnull();
             continue;
@@ -5226,7 +5341,7 @@ RefPtr<CSSStyleValue> Parser::parse_font_value(TokenStream<ComponentValue>& toke
     // Since normal is the default value for all the properties that can have it, we don't have to actually
     // set anything to normal here. It'll be set when we create the ShorthandStyleValue below.
     // We just need to make sure we were not given more normals than will fit.
-    int unset_value_count = (font_style ? 0 : 1) + (font_weight ? 0 : 1) + (font_variant ? 0 : 1) + (font_stretch ? 0 : 1);
+    int unset_value_count = (font_style ? 0 : 1) + (font_weight ? 0 : 1) + (font_variant ? 0 : 1) + (font_width ? 0 : 1);
     if (unset_value_count < normal_count)
         return nullptr;
 
@@ -5239,15 +5354,15 @@ RefPtr<CSSStyleValue> Parser::parse_font_value(TokenStream<ComponentValue>& toke
         font_variant = property_initial_value(m_context.realm(), PropertyID::FontVariant);
     if (!font_weight)
         font_weight = property_initial_value(m_context.realm(), PropertyID::FontWeight);
-    if (!font_stretch)
-        font_stretch = property_initial_value(m_context.realm(), PropertyID::FontStretch);
+    if (!font_width)
+        font_width = property_initial_value(m_context.realm(), PropertyID::FontWidth);
     if (!line_height)
         line_height = property_initial_value(m_context.realm(), PropertyID::LineHeight);
 
     transaction.commit();
     return ShorthandStyleValue::create(PropertyID::Font,
-        { PropertyID::FontStyle, PropertyID::FontVariant, PropertyID::FontWeight, PropertyID::FontStretch, PropertyID::FontSize, PropertyID::LineHeight, PropertyID::FontFamily },
-        { font_style.release_nonnull(), font_variant.release_nonnull(), font_weight.release_nonnull(), font_stretch.release_nonnull(), font_size.release_nonnull(), line_height.release_nonnull(), font_families.release_nonnull() });
+        { PropertyID::FontStyle, PropertyID::FontVariant, PropertyID::FontWeight, PropertyID::FontWidth, PropertyID::FontSize, PropertyID::LineHeight, PropertyID::FontFamily },
+        { font_style.release_nonnull(), font_variant.release_nonnull(), font_weight.release_nonnull(), font_width.release_nonnull(), font_size.release_nonnull(), line_height.release_nonnull(), font_families.release_nonnull() });
 }
 
 RefPtr<CSSStyleValue> Parser::parse_font_family_value(TokenStream<ComponentValue>& tokens)
@@ -5327,15 +5442,99 @@ RefPtr<CSSStyleValue> Parser::parse_font_family_value(TokenStream<ComponentValue
     return StyleValueList::create(move(font_families), StyleValueList::Separator::Comma);
 }
 
+RefPtr<CSSStyleValue> Parser::parse_font_language_override_value(TokenStream<ComponentValue>& tokens)
+{
+    // https://drafts.csswg.org/css-fonts/#propdef-font-language-override
+    // This is `normal | <string>` but with the constraint that the string has to be 4 characters long:
+    // Shorter strings are right-padded with spaces, and longer strings are invalid.
+
+    {
+        auto transaction = tokens.begin_transaction();
+        tokens.skip_whitespace();
+        if (auto keyword = parse_keyword_value(tokens); keyword->to_keyword() == Keyword::Normal) {
+            tokens.skip_whitespace();
+            if (tokens.has_next_token()) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse font-language-override: unexpected trailing tokens");
+                return nullptr;
+            }
+            transaction.commit();
+            return keyword;
+        }
+    }
+
+    {
+        auto transaction = tokens.begin_transaction();
+        tokens.skip_whitespace();
+        if (auto string = parse_string_value(tokens)) {
+            auto string_value = string->as_string().string_value();
+            tokens.skip_whitespace();
+            if (tokens.has_next_token()) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse font-language-override: unexpected trailing tokens");
+                return nullptr;
+            }
+            auto length = string_value.code_points().length();
+            if (length > 4) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse font-language-override: <string> value \"{}\" is too long", string_value);
+                return nullptr;
+            }
+            transaction.commit();
+            if (length < 4)
+                return StringStyleValue::create(MUST(String::formatted("{<4}", string_value)));
+            return string;
+        }
+    }
+
+    return nullptr;
+}
+
 JS::GCPtr<CSSFontFaceRule> Parser::parse_font_face_rule(TokenStream<ComponentValue>& tokens)
 {
     auto declarations_and_at_rules = parse_a_list_of_declarations(tokens);
 
     Optional<FlyString> font_family;
+    Optional<FlyString> font_named_instance;
     Vector<ParsedFontFace::Source> src;
     Vector<Gfx::UnicodeRange> unicode_range;
     Optional<int> weight;
     Optional<int> slope;
+    Optional<int> width;
+    Optional<Percentage> ascent_override;
+    Optional<Percentage> descent_override;
+    Optional<Percentage> line_gap_override;
+    FontDisplay font_display = FontDisplay::Auto;
+    Optional<FlyString> language_override;
+
+    // "normal" is returned as nullptr
+    auto parse_as_percentage_or_normal = [&](Vector<ComponentValue> const& values) -> ErrorOr<Optional<Percentage>> {
+        // normal | <percentage [0,∞]>
+        TokenStream tokens { values };
+        if (auto percentage_value = parse_percentage_value(tokens)) {
+            tokens.skip_whitespace();
+            if (tokens.has_next_token())
+                return Error::from_string_literal("Unexpected trailing tokens");
+
+            if (percentage_value->is_percentage() && percentage_value->as_percentage().percentage().value() >= 0)
+                return percentage_value->as_percentage().percentage();
+
+            // TODO: Once we implement calc-simplification in the parser, we should no longer see math values here,
+            //       unless they're impossible to resolve and thus invalid.
+            if (percentage_value->is_math()) {
+                if (auto result = percentage_value->as_math().resolve_percentage(); result.has_value())
+                    return result.value();
+            }
+
+            return Error::from_string_literal("Invalid percentage");
+        }
+
+        tokens.skip_whitespace();
+        if (!tokens.next_token().is_ident("normal"sv))
+            return Error::from_string_literal("Expected `normal | <percentage [0,∞]>`");
+        tokens.skip_whitespace();
+        if (tokens.has_next_token())
+            return Error::from_string_literal("Unexpected trailing tokens");
+
+        return OptionalNone {};
+    };
 
     for (auto& declaration_or_at_rule : declarations_and_at_rules) {
         if (declaration_or_at_rule.is_at_rule()) {
@@ -5344,17 +5543,38 @@ JS::GCPtr<CSSFontFaceRule> Parser::parse_font_face_rule(TokenStream<ComponentVal
         }
 
         auto const& declaration = declaration_or_at_rule.declaration();
-        if (declaration.name().equals_ignoring_ascii_case("font-weight"sv)) {
-            TokenStream token_stream { declaration.values() };
-            if (auto value = parse_css_value(CSS::PropertyID::FontWeight, token_stream); !value.is_error()) {
-                weight = value.value()->to_font_weight();
+        if (declaration.name().equals_ignoring_ascii_case("ascent-override"sv)) {
+            auto value = parse_as_percentage_or_normal(declaration.values());
+            if (value.is_error()) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse @font-face ascent-override: {}", value.error());
+            } else {
+                ascent_override = value.release_value();
             }
             continue;
         }
-        if (declaration.name().equals_ignoring_ascii_case("font-style"sv)) {
+        if (declaration.name().equals_ignoring_ascii_case("descent-override"sv)) {
+            auto value = parse_as_percentage_or_normal(declaration.values());
+            if (value.is_error()) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse @font-face descent-override: {}", value.error());
+            } else {
+                descent_override = value.release_value();
+            }
+            continue;
+        }
+        if (declaration.name().equals_ignoring_ascii_case("font-display"sv)) {
             TokenStream token_stream { declaration.values() };
-            if (auto value = parse_css_value(CSS::PropertyID::FontStyle, token_stream); !value.is_error()) {
-                slope = value.value()->to_font_slope();
+            if (auto keyword_value = parse_keyword_value(token_stream)) {
+                token_stream.skip_whitespace();
+                if (token_stream.has_next_token()) {
+                    dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Unexpected trailing tokens in font-display");
+                } else {
+                    auto value = keyword_to_font_display(keyword_value->to_keyword());
+                    if (value.has_value()) {
+                        font_display = *value;
+                    } else {
+                        dbgln_if(CSS_PARSER_DEBUG, "CSSParser: `{}` is not a valid value for font-display", keyword_value->to_string());
+                    }
+                }
             }
             continue;
         }
@@ -5402,6 +5622,70 @@ JS::GCPtr<CSSFontFaceRule> Parser::parse_font_face_rule(TokenStream<ComponentVal
             font_family = String::join(' ', font_family_parts).release_value_but_fixme_should_propagate_errors();
             continue;
         }
+        if (declaration.name().equals_ignoring_ascii_case("font-language-override"sv)) {
+            TokenStream token_stream { declaration.values() };
+            if (auto maybe_value = parse_css_value(CSS::PropertyID::FontLanguageOverride, token_stream); !maybe_value.is_error()) {
+                auto& value = maybe_value.value();
+                if (value->is_string()) {
+                    language_override = value->as_string().string_value();
+                } else {
+                    language_override.clear();
+                }
+            }
+            continue;
+        }
+        if (declaration.name().equals_ignoring_ascii_case("font-named-instance"sv)) {
+            // auto | <string>
+            TokenStream token_stream { declaration.values() };
+            token_stream.skip_whitespace();
+            auto& token = token_stream.next_token();
+            token_stream.skip_whitespace();
+            if (token_stream.has_next_token()) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Unexpected trailing tokens in font-named-instance");
+                continue;
+            }
+
+            if (token.is_ident("auto"sv)) {
+                font_named_instance.clear();
+            } else if (token.is(Token::Type::String)) {
+                font_named_instance = token.token().string();
+            } else {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse font-named-instance from {}", token.to_debug_string());
+            }
+
+            continue;
+        }
+        if (declaration.name().equals_ignoring_ascii_case("font-style"sv)) {
+            TokenStream token_stream { declaration.values() };
+            if (auto value = parse_css_value(CSS::PropertyID::FontStyle, token_stream); !value.is_error()) {
+                slope = value.value()->to_font_slope();
+            }
+            continue;
+        }
+        if (declaration.name().equals_ignoring_ascii_case("font-weight"sv)) {
+            TokenStream token_stream { declaration.values() };
+            if (auto value = parse_css_value(CSS::PropertyID::FontWeight, token_stream); !value.is_error()) {
+                weight = value.value()->to_font_weight();
+            }
+            continue;
+        }
+        if (declaration.name().equals_ignoring_ascii_case("font-width"sv)
+            || declaration.name().equals_ignoring_ascii_case("font-stretch"sv)) {
+            TokenStream token_stream { declaration.values() };
+            if (auto value = parse_css_value(CSS::PropertyID::FontWidth, token_stream); !value.is_error()) {
+                width = value.value()->to_font_width();
+            }
+            continue;
+        }
+        if (declaration.name().equals_ignoring_ascii_case("line-gap-override"sv)) {
+            auto value = parse_as_percentage_or_normal(declaration.values());
+            if (value.is_error()) {
+                dbgln_if(CSS_PARSER_DEBUG, "CSSParser: Failed to parse @font-face line-gap-override: {}", value.error());
+            } else {
+                line_gap_override = value.release_value();
+            }
+            continue;
+        }
         if (declaration.name().equals_ignoring_ascii_case("src"sv)) {
             TokenStream token_stream { declaration.values() };
             Vector<ParsedFontFace::Source> supported_sources = parse_font_face_src(token_stream);
@@ -5431,7 +5715,7 @@ JS::GCPtr<CSSFontFaceRule> Parser::parse_font_face_rule(TokenStream<ComponentVal
         unicode_range.empend(0x0u, 0x10FFFFu);
     }
 
-    return CSSFontFaceRule::create(m_context.realm(), ParsedFontFace { font_family.release_value(), weight, slope, move(src), move(unicode_range) });
+    return CSSFontFaceRule::create(m_context.realm(), ParsedFontFace { font_family.release_value(), move(weight), move(slope), move(width), move(src), move(unicode_range), move(ascent_override), move(descent_override), move(line_gap_override), font_display, move(font_named_instance), move(language_override) });
 }
 
 Vector<ParsedFontFace::Source> Parser::parse_as_font_face_src()
@@ -6088,7 +6372,7 @@ RefPtr<CSSStyleValue> Parser::parse_transform_value(TokenStream<ComponentValue>&
             argument_tokens.skip_whitespace();
 
             auto const& value = argument_tokens.next_token();
-            RefPtr<CalculatedStyleValue> maybe_calc_value = parse_calculated_value(value);
+            RefPtr<CSSMathValue> maybe_calc_value = parse_calculated_value(value);
 
             switch (function_metadata.parameters[argument_index].type) {
             case TransformFunctionParameterType::Angle: {
@@ -7214,8 +7498,6 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
     case PropertyID::BackgroundClip:
     case PropertyID::BackgroundImage:
     case PropertyID::BackgroundOrigin:
-    case PropertyID::WebkitBackgroundClip:
-    case PropertyID::WebkitBackgroundOrigin:
         if (auto parsed_value = parse_simple_comma_separated_value_list(property_id, tokens))
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
@@ -7248,20 +7530,14 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
     case PropertyID::BorderTopRightRadius:
     case PropertyID::BorderBottomRightRadius:
     case PropertyID::BorderBottomLeftRadius:
-    case PropertyID::WebkitBorderTopLeftRadius:
-    case PropertyID::WebkitBorderTopRightRadius:
-    case PropertyID::WebkitBorderBottomRightRadius:
-    case PropertyID::WebkitBorderBottomLeftRadius:
         if (auto parsed_value = parse_border_radius_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::BorderRadius:
-    case PropertyID::WebkitBorderRadius:
         if (auto parsed_value = parse_border_radius_shorthand_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::BoxShadow:
-    case PropertyID::WebkitBoxShadow:
         if (auto parsed_value = parse_shadow_value(tokens, AllowInsetKeyword::Yes); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
@@ -7290,12 +7566,10 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::Flex:
-    case PropertyID::WebkitFlex:
         if (auto parsed_value = parse_flex_shorthand_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::FlexFlow:
-    case PropertyID::WebkitFlexFlow:
         if (auto parsed_value = parse_flex_flow_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
@@ -7305,6 +7579,10 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
         return ParseError::SyntaxError;
     case PropertyID::FontFamily:
         if (auto parsed_value = parse_font_family_value(tokens); parsed_value && !tokens.has_next_token())
+            return parsed_value.release_nonnull();
+        return ParseError::SyntaxError;
+    case PropertyID::FontLanguageOverride:
+        if (auto parsed_value = parse_font_language_override_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::GridArea:
@@ -7412,17 +7690,14 @@ Parser::ParseErrorOr<NonnullRefPtr<CSSStyleValue>> Parser::parse_css_value(Prope
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::Transform:
-    case PropertyID::WebkitTransform:
         if (auto parsed_value = parse_transform_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::TransformOrigin:
-    case PropertyID::WebkitTransformOrigin:
         if (auto parsed_value = parse_transform_origin_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
     case PropertyID::Transition:
-    case PropertyID::WebkitTransition:
         if (auto parsed_value = parse_transition_value(tokens); parsed_value && !tokens.has_next_token())
             return parsed_value.release_nonnull();
         return ParseError::SyntaxError;
@@ -7790,10 +8065,10 @@ public:
     ComponentValue& component_value() { return m_component_value; }
 
     virtual String to_string() const override { VERIFY_NOT_REACHED(); }
-    virtual Optional<CalculatedStyleValue::ResolvedType> resolved_type() const override { VERIFY_NOT_REACHED(); }
+    virtual Optional<CSSMathValue::ResolvedType> resolved_type() const override { VERIFY_NOT_REACHED(); }
     virtual Optional<CSSNumericType> determine_type(Web::CSS::PropertyID) const override { VERIFY_NOT_REACHED(); }
     virtual bool contains_percentage() const override { VERIFY_NOT_REACHED(); }
-    virtual CalculatedStyleValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CalculatedStyleValue::PercentageBasis const&) const override { VERIFY_NOT_REACHED(); }
+    virtual CSSMathValue::CalculationResult resolve(Optional<Length::ResolutionContext const&>, CSSMathValue::PercentageBasis const&) const override { VERIFY_NOT_REACHED(); }
     virtual void for_each_child_node(AK::Function<void(NonnullOwnPtr<CalculationNode>&)> const&) override { }
 
     virtual void dump(StringBuilder& builder, int indent) const override
@@ -8285,8 +8560,8 @@ bool Parser::expand_unresolved_values(DOM::Element& element, FlyString const& pr
                 continue;
             }
 
-            if (auto maybe_calc_value = parse_calculated_value(value); maybe_calc_value && maybe_calc_value->is_calculated()) {
-                auto& calc_value = maybe_calc_value->as_calculated();
+            if (auto maybe_calc_value = parse_calculated_value(value); maybe_calc_value && maybe_calc_value->is_math()) {
+                auto& calc_value = maybe_calc_value->as_math();
                 if (calc_value.resolves_to_angle()) {
                     auto resolved_value = calc_value.resolve_angle();
                     dest.empend(Token::create_dimension(resolved_value->to_degrees(), "deg"_fly_string));

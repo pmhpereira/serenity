@@ -212,9 +212,27 @@
     "inline-start",
     "inline-end"
   ],
+  "font-display": [
+    "auto",
+    "block",
+    "swap",
+    "fallback",
+    "optional"
+  ],
   "font-variant": [
     "normal",
     "small-caps"
+  ],
+  "font-width": [
+    "ultra-condensed",
+    "extra-condensed",
+    "condensed",
+    "semi-condensed",
+    "normal",
+    "semi-expanded",
+    "expanded",
+    "extra-expanded",
+    "ultra-expanded"
   ],
   "image-rendering": [
     "auto",
